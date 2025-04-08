@@ -6,7 +6,7 @@ export interface RoadmapGenerationConfig {
   milestoneMinLength: number;
 }
 
-export const defaultGenerationConfig: RoadmapGenerationConfig = {
+export const defaultRoadmapGenerationConfig: RoadmapGenerationConfig = {
   maxLength: 10,
   minLength: 5,
   locale: new Intl.Locale("vi"),

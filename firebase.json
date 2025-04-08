@@ -1,14 +1,12 @@
 {
   "functions": [
     {
-      "source": "functions",
+      "source": "genkit-fns",
       "codebase": "default",
-      "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run build"
-      ]
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
     },
     {
-      "source": "learnez-firebase",
+      "source": "cloud-fns",
       "codebase": "learnez-firebase",
       "ignore": [
         "node_modules",
@@ -18,7 +16,6 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
