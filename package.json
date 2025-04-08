@@ -1,0 +1,16 @@
+{
+  "name": "learnez_backend",
+  "version": "0.0.1",
+  "description": "LearnEZ is a learners-first platform to supercharge students' learning speed and efficiency.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@genkit-ai/googleai": "^1.5.0",
+    "firebase": "^11.6.0",
+    "genkit": "^1.5.0"
+  }
+}
