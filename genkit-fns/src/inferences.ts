@@ -1,6 +1,12 @@
+import { getFirestore } from "firebase-admin/firestore";
 // Import the Genkit core libraries and plugins.
-import { genkit, z } from "genkit";
-import { gemini15Flash, vertexAI } from "@genkit-ai/vertexai";
+import { genkit, z, Document } from "genkit";
+import {
+  gemini15Flash,
+  gemini20FlashLite,
+  textEmbeddingGeckoMultilingual001,
+  vertexAI,
+} from "@genkit-ai/vertexai";
 
 // Cloud Functions for Firebase supports Genkit natively. The onCallGenkit function creates a callable
 // function from a Genkit action. It automatically implements streaming if your flow does.
@@ -13,7 +19,11 @@ import { onCallGenkit } from "firebase-functions/https";
 // If you are using Google generative AI you can get an API key at https://aistudio.google.com/app/apikey
 import { defineSecret } from "firebase-functions/params";
 const apiKey = defineSecret("GOOGLE_GENAI_API_KEY");
-import { enableFirebaseTelemetry } from "@genkit-ai/firebase";
+import {
+  defineFirestoreRetriever,
+  enableFirebaseTelemetry,
+} from "@genkit-ai/firebase";
+import { embeddingConfig } from ".";
 
 enableFirebaseTelemetry();
 
@@ -91,20 +101,39 @@ const checkpointSuggestionFlow = ai.defineFlow(
     inputSchema: z.object({
       milestoneDescription: z.string(),
       milestoneName: z.string(),
+      referenceMaterialId: z.string(),
+      milestoneMinLength: z.number(),
+      milestoneMaxLength: z.number(),
     }),
-    outputSchema: z.array(
-      z.object({
-        label: z.string(),
-        description: z.string(),
-        referenceMaterials: z.array(
-          z.object({
-            referenceId: z.string(),
-            referenceCollection: z.string(),
-            referenceContent: z.string(),
+    outputSchema: z
+      .array(
+        z
+          .object({
+            label: z
+              .string()
+              .describe(
+                "A short and concise title/label of the checkpoint, generated from the given material content."
+              ),
+            description: z
+              .string()
+              .describe(
+                "A descriptive description of the checkpoint's content and what the learner should accomplish by finishing this checkpoint."
+              ),
+            referenceMaterials: z.array(
+              z.object({
+                referenceId: z.string(),
+                referenceCollection: z.string(),
+                referenceContent: z.string(),
+              })
+            ),
           })
-        ),
-      })
-    ),
+          .describe(
+            "A checkpoint describing a step in the learner's journey to learning the milestone's main content"
+          )
+      )
+      .describe(
+        "Multiple checkpoints as steps in learning the content provided in the milestone's title and description."
+      ),
   },
   async (input) => {
     const result = [
@@ -114,7 +143,58 @@ const checkpointSuggestionFlow = ai.defineFlow(
         referenceMaterials: [],
       },
     ];
+    // Query Firestore Vect DB
+    const groundingData = await queryMaterialContent(
+      `materials/${input.referenceMaterialId}/embeddings`,
+      input.milestoneDescription,
+      10
+    );
 
+    const { output } = await ai.generate({
+      model: gemini20FlashLite,
+      prompt: `You are a smart and responsible agent that generates checkpoints as step by steps for a Learner's roadmap's milestone, the milestone is about ${input.milestoneName}. You should generate at least ${input.milestoneMinLength} and at most ${input.milestoneMaxLength} checkpoints to guide the learner to learn about ${input.milestoneName}, based on the material's content. DO NOT HALLUCINATE. DO NOT ADD CONTENT THAT IS NOT INCLUDED IN THE PROVIDED MATERIALS`,
+      output: {
+        schema: z.array(
+          z.object({
+            label: z
+              .string()
+              .describe(
+                "A short and concise title/label of the checkpoint, generated from the given material content."
+              ),
+            description: z
+              .string()
+              .describe(
+                "A descriptive description of the checkpoint's content and what the learner should accomplish by finishing this checkpoint."
+              ),
+          })
+        ),
+      },
+      docs: groundingData,
+    });
     return result;
   }
 );
+
+async function queryMaterialContent(
+  embedsCollection: string,
+  query: string,
+  maxLength: number = 5
+): Promise<Document[]> {
+  const retriever = defineFirestoreRetriever(ai, {
+    name: "materialRetriever",
+    firestore: getFirestore(),
+    collection: embedsCollection,
+    contentField: embeddingConfig.contentField,
+    vectorField: embeddingConfig.vectorField,
+    embedder: textEmbeddingGeckoMultilingual001,
+    distanceMeasure: "COSINE",
+  });
+
+  return await ai.retrieve({
+    retriever,
+    query,
+    options: {
+      limit: maxLength,
+    },
+  });
+}

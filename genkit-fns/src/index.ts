@@ -20,7 +20,7 @@ import {
 
 const maxFileSizeMB: number = 50;
 
-const embeddingConfig = {
+export const embeddingConfig = {
   contentField: "text",
   vectorField: "embedding",
   embedder: textEmbeddingGeckoMultilingual001,
