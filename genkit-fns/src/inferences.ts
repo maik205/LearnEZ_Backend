@@ -24,60 +24,24 @@ import {
   enableFirebaseTelemetry,
 } from "@genkit-ai/firebase";
 import { embeddingConfig } from ".";
+import { RoadmapCheckpoint, RoadmapCheckpointStatus } from "./types/roadmap";
+import { RoadmapGenerationConfig } from "./types/roadmap.config";
 
 enableFirebaseTelemetry();
 
 export const ai = genkit({
-  plugins: [
-    // Load the Vertex AI plugin. You can optionally specify your project ID
-    // by passing in a config object; if you don't, the Vertex AI plugin uses
-    // the value from the GCLOUD_PROJECT environment variable.
-    vertexAI(),
-  ],
+  plugins: [vertexAI()],
 });
 
-// // Define a simple flow that prompts an LLM to generate menu suggestions.
-// const menuSuggestionFlow = ai.defineFlow(
-//   {
-//     name: "menuSuggestionFlow",
-//     inputSchema: z.string().describe("A restaurant theme").default("seafood"),
-//     outputSchema: z.string(),
-//     streamSchema: z.string(),
-//   },
-//   async (subject, { sendChunk }) => {
-//     // Construct a request and send it to the model API.
-//     const prompt = `Suggest an item for the menu of a ${subject} themed restaurant`;
-//     const { response, stream } = ai.generateStream({
-//       model: gemini15Flash,
-//       prompt: prompt,
-//       config: {
-//         temperature: 1,
-//       },
-//     });
-
-//     for await (const chunk of stream) {
-//       sendChunk(chunk.text);
-//     }
-
-//     return (await response).text;
-//   }
-// );
-
-// export const menuSuggestion = onCallGenkit(
-//   {
-//     secrets: [apiKey],
-//   },
-//   menuSuggestionFlow
-// );
-
-const milestoneSuggestionFlow = ai.defineFlow(
+export const milestoneSuggestionFlow = ai.defineFlow(
   {
     name: "milestoneSuggestionFlow",
     inputSchema: z.object({
       previousMilestonesDescription: z.array(z.string()),
       milestoneNumber: z.number(),
       maxMilestoneAmount: z.number(),
-      referenceMaterial: z.string(),
+      referenceMaterialId: z.string(),
+      userRequestedContent: z.string(),
     }),
     outputSchema: z.object({
       label: z.string(),
@@ -86,92 +50,36 @@ const milestoneSuggestionFlow = ai.defineFlow(
   },
   async (input) => {
     // Retrieve embedded data from Firestore Vector Store
-    const result = {
-      label: "",
-      description: "",
-    };
-
-    return result;
-  }
-);
-
-const checkpointSuggestionFlow = ai.defineFlow(
-  {
-    name: "checkpointSuggestionFlow",
-    inputSchema: z.object({
-      milestoneDescription: z.string(),
-      milestoneName: z.string(),
-      referenceMaterialId: z.string(),
-      milestoneMinLength: z.number(),
-      milestoneMaxLength: z.number(),
-    }),
-    outputSchema: z
-      .array(
-        z
-          .object({
-            label: z
-              .string()
-              .describe(
-                "A short and concise title/label of the checkpoint, generated from the given material content."
-              ),
-            description: z
-              .string()
-              .describe(
-                "A descriptive description of the checkpoint's content and what the learner should accomplish by finishing this checkpoint."
-              ),
-            referenceMaterials: z.array(
-              z.object({
-                referenceId: z.string(),
-                referenceCollection: z.string(),
-                referenceContent: z.string(),
-              })
-            ),
-          })
-          .describe(
-            "A checkpoint describing a step in the learner's journey to learning the milestone's main content"
-          )
-      )
-      .describe(
-        "Multiple checkpoints as steps in learning the content provided in the milestone's title and description."
-      ),
-  },
-  async (input) => {
-    const result = [
-      {
-        label: "",
-        description: "",
-        referenceMaterials: [],
-      },
-    ];
-    // Query Firestore Vect DB
     const groundingData = await queryMaterialContent(
       `materials/${input.referenceMaterialId}/embeddings`,
-      input.milestoneDescription,
+      input.userRequestedContent,
       10
     );
 
-    const { output } = await ai.generate({
+    const inferenceResult = ai.generate({
       model: gemini20FlashLite,
-      prompt: `You are a smart and responsible agent that generates checkpoints as step by steps for a Learner's roadmap's milestone, the milestone is about ${input.milestoneName}. You should generate at least ${input.milestoneMinLength} and at most ${input.milestoneMaxLength} checkpoints to guide the learner to learn about ${input.milestoneName}, based on the material's content. DO NOT HALLUCINATE. DO NOT ADD CONTENT THAT IS NOT INCLUDED IN THE PROVIDED MATERIALS`,
+      prompt: `You are an expert roadmap designer.
+Create milestone #${input.milestoneNumber} in a learning roadmap, not exceeding ${input.maxMilestoneAmount} total milestones.
+Act as a curriculum developer who adapts plans based on prior steps and user goals.
+Use the following to guide your milestone creation:
+
+Previous Milestones: ${input.previousMilestonesDescription}
+
+Reference Material ID: ${input.referenceMaterialId}
+
+User Goal: ${input.userRequestedContent}
+
+Design the milestone to be sequential, achievable, and relevant.
+It should clearly build upon prior milestones and help progress toward the user’s learning objective.`,
       output: {
-        schema: z.array(
-          z.object({
-            label: z
-              .string()
-              .describe(
-                "A short and concise title/label of the checkpoint, generated from the given material content."
-              ),
-            description: z
-              .string()
-              .describe(
-                "A descriptive description of the checkpoint's content and what the learner should accomplish by finishing this checkpoint."
-              ),
-          })
-        ),
+        schema: z.object({
+          label: z.string(),
+          description: z.string(),
+        }),
       },
       docs: groundingData,
     });
-    return result;
+    return (await inferenceResult).data || { label: "", description: "" };
   }
 );
 
@@ -198,3 +106,65 @@ async function queryMaterialContent(
     },
   });
 }
+
+async function generateCheckpointsForMilestone(
+  input: CheckpointGenerationInput
+): Promise<RoadmapCheckpoint[]> {
+  const result: Array<RoadmapCheckpoint> = [];
+
+  // Query Firestore Vect DB
+  const referenceCollection: string = `materials/${input.referenceMaterialId}/embeddings`;
+  const groundingData = await queryMaterialContent(
+    referenceCollection,
+    input.milestoneDescription,
+    10
+  );
+  const { output } = await ai.generate({
+    model: gemini20FlashLite,
+    prompt: `You are a smart and responsible agent that generates checkpoints as step by steps for a Learner's roadmap's milestone, the milestone is about ${input.milestoneName}. You should generate at least ${input.milestoneMinLength} and at most ${input.milestoneMaxLength} checkpoints to guide the learner to learn about ${input.milestoneName}, based on the material's content. DO NOT HALLUCINATE. DO NOT ADD CONTENT THAT IS NOT INCLUDED IN THE PROVIDED MATERIALS`,
+    output: {
+      schema: z.array(
+        z.object({
+          label: z
+            .string()
+            .describe(
+              "A short and concise title/label of the checkpoint, generated from the given material content."
+            ),
+          description: z
+            .string()
+            .describe(
+              "A descriptive description of the checkpoint's content and what the learner should accomplish by finishing this checkpoint."
+            ),
+        })
+      ),
+    },
+    docs: groundingData,
+  });
+  if (output != null) {
+    output.forEach((val) => {
+      result.push({
+        ...val,
+        referenceMaterial: [
+          {
+            referenceId: input.referenceMaterialId,
+            referenceContent: groundingData.join("|"),
+            referenceCollection: referenceCollection,
+          },
+        ],
+        status: RoadmapCheckpointStatus.NOT_STARTED,
+      });
+    });
+    return result;
+  }
+  return [];
+}
+
+interface CheckpointGenerationInput {
+  milestoneName: string;
+  milestoneDescription: string;
+  referenceMaterialId: string;
+  generationConfig: RoadmapGenerationConfig;
+}
+
+export const suggestCheckpoint = onCallGenkit(checkpointSuggestionFlow);
+export const suggestMilestone = onCallGenkit(milestoneSuggestionFlow);

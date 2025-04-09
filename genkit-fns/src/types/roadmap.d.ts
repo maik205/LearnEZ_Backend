@@ -21,7 +21,6 @@ export interface RoadmapCheckpoint {
   label: string;
   status: RoadmapCheckpointStatus;
   description: string;
-  lengthMinutes: number;
   referenceMaterial: Array<GenericReference>;
 }
 
