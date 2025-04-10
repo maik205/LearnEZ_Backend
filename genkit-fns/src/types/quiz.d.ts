@@ -22,7 +22,7 @@ export interface Attempt {
     userId: string,
     startedAt: Date,
     endedAt?: Date,
-    maxLength: number,
+    maxLength?: number,
     attemptData: QuestionAttempt[]
 }
 
@@ -30,7 +30,7 @@ export interface QuestionAttempt {
     question: GenericQuestion,
     userAnswer: string,
     pointsReceived: number,
-    answeredAt: Date,
+    answeredAt?: Date,
     harderQuestion?: GenericQuestion,
     easierQuestion?: GenericQuestion
 }
