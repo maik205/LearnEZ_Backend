@@ -4,7 +4,11 @@ import pdfParse from "pdf-parse";
 import { chunk } from "llm-chunk";
 import { ref, uploadBytes, getStorage } from "firebase/storage";
 import { textEmbeddingGeckoMultilingual001 } from "@genkit-ai/vertexai";
-import { ai } from "./inferences";
+import {
+  ai,
+  generateCheckpointsForMilestone,
+  milestoneSuggestionFlow,
+} from "./inferences";
 import {
   addDoc,
   collection,
@@ -84,9 +88,70 @@ export const ingestPDFFile = onCall(async (request, response) => {
   return "Success";
 });
 
-export const generateRoadmap = onCall((request, response) => {
+export const generateRoadmap = onCall(async (request, response) => {
   const config: RoadmapGenerationConfig =
     request.data.roadmapGenerationConfig || defaultRoadmapGenerationConfig;
-  let curRoadmapLength: number = 0;
-  let currentMilestone: RoadmapMilestone;
+  let currentMilestoneNumber: number = 0;
+  const materialId = request.data.materialId;
+  const userRequestedContent = request.data.requestedContent || "";
+  if (!materialId)
+    throw new Error(
+      "You need to provide grounding material for generating the roadmap."
+    );
+  //Initial data
+  let initialMilestone: RoadmapMilestone = {
+    ...(await milestoneSuggestionFlow({
+      previousMilestonesDescription: [],
+      milestoneNumber: 0,
+      maxMilestoneAmount: config.maxLength,
+      referenceMaterialId: materialId,
+      userRequestedContent,
+    })),
+    content: [],
+  };
+  populateMilestoneWithCheckpoints(initialMilestone, materialId);
+  let currentMilestone = initialMilestone;
+  let inferenceResult: { label: string; description: string };
+  while (true) {
+    inferenceResult = await milestoneSuggestionFlow({
+      previousMilestonesDescription: getAllDescriptions(initialMilestone),
+      milestoneNumber: ++currentMilestoneNumber,
+      maxMilestoneAmount: config.maxLength,
+      referenceMaterialId: materialId,
+      userRequestedContent,
+    });
+    if (inferenceResult.label == "") break;
+    currentMilestone.nextMilestone = {
+      ...inferenceResult,
+      content: [],
+    };
+    populateMilestoneWithCheckpoints(
+      currentMilestone.nextMilestone,
+      materialId
+    );
+    currentMilestone = currentMilestone.nextMilestone;
+  }
 });
+
+async function populateMilestoneWithCheckpoints(
+  milestone: RoadmapMilestone,
+  referenceId: string,
+  config: RoadmapGenerationConfig = defaultRoadmapGenerationConfig
+) {
+  milestone.content = await generateCheckpointsForMilestone({
+    milestoneName: milestone.label,
+    milestoneDescription: milestone.description,
+    referenceMaterialId: referenceId,
+    generationConfig: config,
+  });
+}
+
+function getAllDescriptions(milestone: RoadmapMilestone): string[] {
+  let node: RoadmapMilestone | undefined = milestone;
+  const result: string[] = [];
+  while (node) {
+    result.push(milestone.description);
+    node = milestone.nextMilestone;
+  }
+  return result;
+}

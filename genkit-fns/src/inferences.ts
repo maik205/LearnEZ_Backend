@@ -79,6 +79,7 @@ It should clearly build upon prior milestones and help progress toward the userâ
       },
       docs: groundingData,
     });
+
     return (await inferenceResult).data || { label: "", description: "" };
   }
 );
@@ -107,7 +108,7 @@ async function queryMaterialContent(
   });
 }
 
-async function generateCheckpointsForMilestone(
+export async function generateCheckpointsForMilestone(
   input: CheckpointGenerationInput
 ): Promise<RoadmapCheckpoint[]> {
   const result: Array<RoadmapCheckpoint> = [];
@@ -121,7 +122,7 @@ async function generateCheckpointsForMilestone(
   );
   const { output } = await ai.generate({
     model: gemini20FlashLite,
-    prompt: `You are a smart and responsible agent that generates checkpoints as step by steps for a Learner's roadmap's milestone, the milestone is about ${input.milestoneName}. You should generate at least ${input.milestoneMinLength} and at most ${input.milestoneMaxLength} checkpoints to guide the learner to learn about ${input.milestoneName}, based on the material's content. DO NOT HALLUCINATE. DO NOT ADD CONTENT THAT IS NOT INCLUDED IN THE PROVIDED MATERIALS`,
+    prompt: `You are a smart and responsible agent that generates checkpoints as step by steps for a Learner's roadmap's milestone, the milestone is about ${input.milestoneName}. You should generate at least ${input.generationConfig.milestoneMinLength} and at most ${input.generationConfig.milestoneMaxLength} checkpoints to guide the learner to learn about ${input.milestoneName}, based on the material's content. DO NOT HALLUCINATE. DO NOT ADD CONTENT THAT IS NOT INCLUDED IN THE PROVIDED MATERIALS`,
     output: {
       schema: z.array(
         z.object({
@@ -166,5 +167,4 @@ interface CheckpointGenerationInput {
   generationConfig: RoadmapGenerationConfig;
 }
 
-export const suggestCheckpoint = onCallGenkit(checkpointSuggestionFlow);
 export const suggestMilestone = onCallGenkit(milestoneSuggestionFlow);
