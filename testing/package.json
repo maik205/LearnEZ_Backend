@@ -1,0 +1,14 @@
+{
+  "name": "learnez-testing",
+  "version": "1.0.0",
+  "description": "Test functionalities for parent project",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "firebase": "^11.6.0"
+  }
+}

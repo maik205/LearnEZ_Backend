@@ -84,7 +84,7 @@ It should clearly build upon prior milestones and help progress toward the userâ
   }
 );
 
-async function queryMaterialContent(
+export async function queryMaterialContent(
   embedsCollection: string,
   query: string,
   maxLength: number = 5

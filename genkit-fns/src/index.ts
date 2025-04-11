@@ -8,6 +8,7 @@ import {
   ai,
   generateCheckpointsForMilestone,
   milestoneSuggestionFlow,
+  queryMaterialContent,
 } from "./inferences";
 import {
   addDoc,
@@ -48,8 +49,8 @@ export const ingestPDFFile = onCall(async (request, response) => {
   // Upload file to Cloud Storage
   const storageInstance = getStorage();
   const documentId = crypto.randomUUID();
-  const location = `${request.auth?.uid}/documents/${documentId}-${source.name}`;
-  const storageRef = ref(storageInstance, location);
+  const bucketLocation = `materials/${documentId}-${source.name}`;
+  const storageRef = ref(storageInstance, bucketLocation);
   if (request.acceptsStreaming) {
     response?.sendChunk("Uploading file");
   }
@@ -62,9 +63,9 @@ export const ingestPDFFile = onCall(async (request, response) => {
   const document = doc(getFirestore(), `materials/${documentId}`);
   setDoc(document, {
     documentId: documentId,
-    ownerId: request.auth?.uid,
+    ownerId: request.auth?.uid || "anoynomous",
     fileName: source.name,
-  });
+  })
   // Extract text content from pdf
   const data = pdfParse(Buffer.from(await source.arrayBuffer()));
   const chunks = chunk((await data).text);
@@ -87,6 +88,22 @@ export const ingestPDFFile = onCall(async (request, response) => {
   }
   return "Success";
 });
+export const getGroundingData = onCall(async (request, response) => {
+  const referenceMaterialId = request.data.materialId;
+  const queryString = request.data.queryString;
+  if (!referenceMaterialId || queryString) {
+    throw new Error("Please provide appropriate input data..");
+  }
+  const embedsCollection = `materials/${referenceMaterialId}/embeddings`;
+  const result = await queryMaterialContent(
+    embedsCollection,
+    queryString,
+    request.data.maxLength
+  );
+  return result.map((val) => {
+    return val.text;
+  });
+});
 
 export const generateRoadmap = onCall(async (request, response) => {
   const config: RoadmapGenerationConfig =
@@ -96,7 +113,7 @@ export const generateRoadmap = onCall(async (request, response) => {
   const userRequestedContent = request.data.requestedContent || "";
   if (!materialId)
     throw new Error(
-      "You need to provide grounding material for generating the roadmap."
+      "You need to provide grounding material to generate a roadmap."
     );
   //Initial data
   let initialMilestone: RoadmapMilestone = {

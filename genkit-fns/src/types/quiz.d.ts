@@ -21,20 +21,19 @@ export interface MultipleChoiceQuestion extends GenericQuestion {
 
 export interface Attempt {
   userId: string;
+  materialId: string;
+  initialQuery: string;
   startedAt: Date;
   endedAt?: Date;
   maxLength?: number;
-  attemptData: QuestionAttempt[];
+  questionHistory: QuestionAttempt[];
 }
 
 export interface QuestionAttempt {
   question: GenericQuestion;
-  index: number;
   userAnswer?: string;
   pointsReceived?: number;
   answeredAt?: Date;
   harderQuestion?: GenericQuestion;
   easierQuestion?: GenericQuestion;
 }
-
-export interface AnswerResult {}
