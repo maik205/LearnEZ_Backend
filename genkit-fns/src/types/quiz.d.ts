@@ -37,4 +37,4 @@ export interface QuestionAttempt {
   easierQuestion?: GenericQuestion;
 }
 
-export interface AnswereResult {}
+export interface AnswerResult {}
