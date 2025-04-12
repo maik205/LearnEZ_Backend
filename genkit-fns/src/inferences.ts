@@ -24,14 +24,70 @@ import {
   enableFirebaseTelemetry,
 } from "@genkit-ai/firebase";
 import { embeddingConfig } from ".";
-import { RoadmapCheckpoint, RoadmapCheckpointStatus } from "./types/roadmap";
+import {
+  RoadmapCheckpoint,
+  RoadmapCheckpointStatus,
+} from "./types/roadmap.type";
 import { RoadmapGenerationConfig } from "./types/roadmap.config";
+import { collection, getDocs } from "firebase/firestore";
 
 enableFirebaseTelemetry();
 
 export const ai = genkit({
   plugins: [vertexAI()],
 });
+
+export const roadmapInfoSuggestionFlow = ai.defineFlow(
+  {
+    name: "roadmapInfoSuggestionFlow",
+    inputSchema: z.object({
+      referenceMaterialId: z.string(),
+    }),
+    outputSchema: z.object({
+      label: z.string(),
+      description: z.string(),
+    }),
+  },
+  async (input) => {
+    const data = (
+      await getDocs(
+        collection(
+          (await import("firebase/firestore")).getFirestore(),
+          `materials/${input.referenceMaterialId}/embeddings`
+        )
+      )
+    ).docs.flatMap((doc) => {
+      return new Document({
+        content: [
+          {
+            text: doc.data()[embeddingConfig.contentField] as string,
+          },
+        ],
+      });
+    });
+    const inferenceResult = ai.generate({
+      model: gemini20FlashLite,
+      prompt: `Given the following paragraph, extract and summarize the content into two fields:
+
+Label – A short title (3–7 words) that best represents the main topic or purpose of the paragraph.
+
+Description – A concise summary (1–2 sentences) that explains the key idea or content of the paragraph.`,
+      output: {
+        schema: z.object({
+          label: z.string(),
+          description: z.string(),
+        }),
+      },
+      docs: data,
+    });
+    return (
+      (await inferenceResult).data || {
+        label: "",
+        description: "",
+      }
+    );
+  }
+);
 
 export const milestoneSuggestionFlow = ai.defineFlow(
   {
@@ -81,6 +137,124 @@ It should clearly build upon prior milestones and help progress toward the user�
     });
 
     return (await inferenceResult).data || { label: "", description: "" };
+  }
+);
+
+export const questionSuggestionFlow = ai.defineFlow(
+  {
+    name: "questionSuggestionFlow",
+    inputSchema: z.object({
+      difficulty: z.number(),
+      initialQuery: z.string(),
+      materialId: z.string(),
+      previousQuestions: z.array(z.string()),
+    }),
+    outputSchema: z.object({
+      maxScore: z.number(),
+      minScore: z.number(),
+      passingScore: z.number(),
+      answer: z.string(),
+      question: z.string(),
+      choices: z.object({
+        a: z.string().describe("Choice A"),
+        b: z.string().describe("Choice B"),
+        c: z.string().describe("Choice C"),
+        d: z.string().describe("Choice D"),
+      }),
+      level: z.number(),
+      reference: z.object({
+        referenceContent: z.string(),
+        referenceId: z.string(),
+        referenceCollection: z.string(),
+      }),
+    }),
+  },
+  async (input) => {
+    const bloomTaxLevel = ((difficulty: number) => {
+      if (difficulty <= 2) {
+        return "Remember"; // Level 1
+      } else if (difficulty <= 4) {
+        return "Understand"; // Level 2
+      } else if (difficulty <= 6) {
+        return "Apply"; // Level 3
+      } else if (difficulty <= 8) {
+        return "Analyze"; // Level 4
+      } else if (difficulty === 9) {
+        return "Evaluate"; // Level 5
+      } else {
+        return "Create"; // Level 6
+      }
+    })(input.difficulty);
+
+    const prompt = `
+  You are an educational assistant. Create 1 multiple choice question (MCQ) in JSON format.
+
+            Requirements:
+            - Question must include:
+                - "question": the question text (relevant to the context provided below)
+                The question's level on the Bloom's Taxonomy Scale is ${bloomTaxLevel}, and on a scale of 1 to 10 ${
+      input.difficulty
+    }
+                - "options": a list of 4 choices
+                - "answer": the correct answer (must match one of the options)
+
+            - Do not repeat any of the previous questions listed below:
+            ${input.previousQuestions.join("\n")}
+    `;
+    const docs = await queryMaterialContent(
+      `materials/${input.materialId}`,
+      input.initialQuery,
+      10
+    );
+    const inferenceResult = ai.generate({
+      model: gemini20FlashLite,
+      prompt,
+      docs,
+      output: {
+        schema: z.object({
+          question: z
+            .string()
+            .describe(
+              "The question to be generated, based on the mentioned Bloom Taxonomy and the material given."
+            ),
+          answer: z
+            .string()
+            .describe("The answer to the question in whole text, not A B C D"),
+          choices: z
+            .object({
+              a: z.string().describe("Choice A"),
+              b: z.string().describe("Choice B"),
+              c: z.string().describe("Choice C"),
+              d: z.string().describe("Choice D"),
+            })
+            .describe("The choices to the Multiple Choice Question."),
+        }),
+      },
+    });
+    const inferenceData = (await inferenceResult).data || {
+      answer: "",
+      question: "",
+      choices: {
+        a: "",
+        b: "",
+        c: "",
+        d: "",
+      },
+    };
+    return {
+      maxScore: 1,
+      minScore: 0,
+      passingScore: 1,
+      answer: inferenceData.answer,
+      question: inferenceData.question,
+      choices: inferenceData.choices,
+      level: input.difficulty,
+      reference: {
+        referenceId: input.materialId,
+        referenceCollection: `materials/${input.materialId}`,
+        referenceContent: docs.join("|"),
+      },
+    };
   }
 );
 
@@ -147,9 +321,9 @@ export async function generateCheckpointsForMilestone(
         ...val,
         referenceMaterial: [
           {
-            referenceId: input.referenceMaterialId,
-            referenceContent: groundingData.join("|"),
-            referenceCollection: referenceCollection,
+            id: input.referenceMaterialId,
+            content: groundingData.join("|"),
+            collection: referenceCollection,
           },
         ],
         status: RoadmapCheckpointStatus.NOT_STARTED,
@@ -168,3 +342,15 @@ interface CheckpointGenerationInput {
 }
 
 export const suggestMilestone = onCallGenkit(milestoneSuggestionFlow);
+
+function convertToDocument(strings: string[]): Document[] {
+  return strings.flatMap((val) => {
+    return new Document({
+      content: [
+        {
+          text: val,
+        },
+      ],
+    });
+  });
+}

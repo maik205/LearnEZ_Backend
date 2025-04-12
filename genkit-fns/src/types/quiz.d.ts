@@ -16,7 +16,12 @@ export interface GenericQuestion {
 }
 
 export interface MultipleChoiceQuestion extends GenericQuestion {
-  choices: Map<"A" | "B" | "C" | "D", string>;
+  choices: {
+    a:string,
+    b:string,
+    c:string,
+    d:string
+  };
 }
 
 export interface Attempt {

@@ -121,7 +121,8 @@ export function initializeQuizListeners(socket) {
  */
 // eslint-disable-next-line no-unused-vars
 function getQuestionData(referenceMaterialId, initialQuery, level = 5, previousQuestions = []) {
-    return undefined;
+    const groundingData = queryMaterialData(referenceMaterialId, initialQuery);
+    
 }
 
 
@@ -146,7 +147,3 @@ async function queryMaterialData(materialId, queryString, maxLength = 5) {
  * @param {string} initialQuery 
  */
 
-// eslint-disable-next-line no-unused-vars
-async function getNextQuestionAttemptData(attempt, referenceMaterialId, initialQuery) {
-
-}

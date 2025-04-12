@@ -22,3 +22,5 @@ io.on('connection', (socket) => {
     initializeQuizListeners(socket);
 });
 
+server.listen(6969);
+

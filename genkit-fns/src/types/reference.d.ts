@@ -1,9 +1,9 @@
 /* eslint-disable */ 
 
 export interface GenericReference {
-    referenceContent: string,
-    referenceId: string,
-    referenceCollection: string
+    content: string,
+    id: string,
+    collection: string
 }
 
 export interface MaterialInfo {

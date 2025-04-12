@@ -9,6 +9,7 @@ import {
   generateCheckpointsForMilestone,
   milestoneSuggestionFlow,
   queryMaterialContent,
+  roadmapInfoSuggestionFlow,
 } from "./inferences";
 import {
   addDoc,
@@ -22,7 +23,7 @@ import {
   defaultRoadmapGenerationConfig,
   RoadmapGenerationConfig,
 } from "./types/roadmap.config";
-import { RoadmapMilestone } from "./types/roadmap";
+import { Roadmap, RoadmapMilestone } from "./types/roadmap.type";
 
 const maxFileSizeMB: number = 50;
 
@@ -65,7 +66,7 @@ export const ingestPDFFile = onCall(async (request, response) => {
     documentId: documentId,
     ownerId: request.auth?.uid || "anoynomous",
     fileName: source.name,
-  })
+  });
   // Extract text content from pdf
   const data = pdfParse(Buffer.from(await source.arrayBuffer()));
   const chunks = chunk((await data).text);
@@ -88,6 +89,7 @@ export const ingestPDFFile = onCall(async (request, response) => {
   }
   return "Success";
 });
+
 export const getGroundingData = onCall(async (request, response) => {
   const referenceMaterialId = request.data.materialId;
   const queryString = request.data.queryString;
@@ -111,6 +113,7 @@ export const generateRoadmap = onCall(async (request, response) => {
   let currentMilestoneNumber: number = 0;
   const materialId = request.data.materialId;
   const userRequestedContent = request.data.requestedContent || "";
+
   if (!materialId)
     throw new Error(
       "You need to provide grounding material to generate a roadmap."
@@ -148,6 +151,17 @@ export const generateRoadmap = onCall(async (request, response) => {
     );
     currentMilestone = currentMilestone.nextMilestone;
   }
+  const roadmapDoc = await addDoc(collection(getFirestore(), "roadmaps"), {});
+  const roadmapInfo = await roadmapInfoSuggestionFlow(materialId);
+  const result: Roadmap = {
+    id: roadmapDoc.id,
+    ...roadmapInfo,
+    createdAt: new Date(),
+    creatorId: request.auth?.uid || "anoynomous",
+    startNode: initialMilestone,
+  };
+  setDoc(roadmapDoc, result);
+  return result;
 });
 
 async function populateMilestoneWithCheckpoints(
