@@ -104,7 +104,7 @@ export function initializeQuizListeners(socket) {
             });
 
             //Generate next question
-            const nextQuestion = getQuestionData(currentAttemptData.materialId, currentAttemptData.initialQuery, nextDifficulty, currentAttemptData.questionHistory.flatMap((val) => { return val.question }));
+            const nextQuestion = await getQuestionData(currentAttemptData.materialId, currentAttemptData.initialQuery, nextDifficulty, currentAttemptData.questionHistory.flatMap((val) => { return val.question }));
             if (isCorrect) currentAttemptData.questionHistory[currentAttemptData.questionHistory.length - 1].harderQuestion = nextQuestion;
             else currentAttemptData.questionHistory[currentAttemptData.questionHistory.length - 1].easierQuestion = nextQuestion;
         });
@@ -117,12 +117,16 @@ export function initializeQuizListeners(socket) {
  * @param {string} referenceMaterialId Reference material ID to ground LLM content generation.
  * @param {number} level level is ranged from 1-10, based on the bloom's Taxonomy scale.
  * @param {string} initialQuery The user's initial query or grounding material vect DB search result.
- * @returns {import("./genkit-fns/src/types/quiz.d.ts").MultipleChoiceQuestion} Returns a question object
+ * @returns {Promise<import("./genkit-fns/src/types/quiz.d.ts").MultipleChoiceQuestion>} Returns a question object
  */
-// eslint-disable-next-line no-unused-vars
-function getQuestionData(referenceMaterialId, initialQuery, level = 5, previousQuestions = []) {
-    const groundingData = queryMaterialData(referenceMaterialId, initialQuery);
-    
+async function getQuestionData(referenceMaterialId, initialQuery, level = 5, previousQuestions = []) {
+    const generateQuestionFn = httpsCallable(fireFunctions, 'generateQuestion');
+    return await generateQuestionFn({
+        difficulty: level,
+        initialQuery,
+        materialId: referenceMaterialId,
+        previousQuestions
+    })
 }
 
 
@@ -139,11 +143,3 @@ async function queryMaterialData(materialId, queryString, maxLength = 5) {
     const queryMaterialDataFn = httpsCallable(fireFunctions, "getGroundingData");
     return (await (queryMaterialDataFn(materialId, queryString, maxLength))).data
 }
-
-/**
- * 
- * @param {import("./genkit-fns/src/types/quiz.d.ts").QuestionAttempt} attempt 
- * @param {string} referenceMaterialId 
- * @param {string} initialQuery 
- */
-

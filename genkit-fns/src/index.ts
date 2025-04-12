@@ -9,12 +9,14 @@ import {
   generateCheckpointsForMilestone,
   milestoneSuggestionFlow,
   queryMaterialContent,
+  questionSuggestionFlow,
   roadmapInfoSuggestionFlow,
 } from "./inferences";
 import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getFirestore,
   setDoc,
 } from "firebase/firestore";
@@ -24,6 +26,7 @@ import {
   RoadmapGenerationConfig,
 } from "./types/roadmap.config";
 import { Roadmap, RoadmapMilestone } from "./types/roadmap.type";
+import { Attempt } from "./types/quiz";
 
 const maxFileSizeMB: number = 50;
 
@@ -132,7 +135,7 @@ export const generateRoadmap = onCall(async (request, response) => {
   populateMilestoneWithCheckpoints(initialMilestone, materialId);
   let currentMilestone = initialMilestone;
   let inferenceResult: { label: string; description: string };
-  while (true) {
+  while (true && currentMilestoneNumber < config.maxLength) {
     inferenceResult = await milestoneSuggestionFlow({
       previousMilestonesDescription: getAllDescriptions(initialMilestone),
       milestoneNumber: ++currentMilestoneNumber,
@@ -164,6 +167,26 @@ export const generateRoadmap = onCall(async (request, response) => {
   return result;
 });
 
+export const generateQuestion = onCall(async (request, response) => {
+  //verify request
+
+  if (
+    !(
+      request.data.difficulty &&
+      request.data.initialQuery &&
+      request.data.materialId &&
+      request.data.previousQuestions
+    )
+  )
+    throw new Error("Invalid parameters");
+
+  return await questionSuggestionFlow({
+    difficulty: request.data.difficulty,
+    initialQuery: request.data.initialQuery,
+    materialId: request.data.materialId,
+    previousQuestions: request.data.previousQuestions,
+  });
+});
 async function populateMilestoneWithCheckpoints(
   milestone: RoadmapMilestone,
   referenceId: string,
@@ -186,3 +209,4 @@ function getAllDescriptions(milestone: RoadmapMilestone): string[] {
   }
   return result;
 }
+
