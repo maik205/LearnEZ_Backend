@@ -23,4 +23,4 @@ io.on('connection', (socket) => {
 });
 
 server.listen(6969);
-
+console.log("server listening on " + 6969);
